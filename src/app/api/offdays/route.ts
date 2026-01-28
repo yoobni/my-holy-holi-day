@@ -30,7 +30,7 @@ function sortItems(items: OffdayItem[]): OffdayItem[] {
 export async function GET() {
   const { data, error } = await supabase
     .from("offdays")
-    .select("date,user_id,name,created_at")
+    .select("date,user_id,name,created_at,users(id,name,color)")
     .order("date", { ascending: true })
     .order("user_id", { ascending: true })
 
@@ -42,12 +42,18 @@ export async function GET() {
   }
 
   const items =
-    data?.map((item) => ({
-      date: item.date,
-      userId: item.user_id,
-      name: item.name,
-      createdAt: item.created_at,
-    })) ?? []
+    data?.map((item) => {
+      const user = Array.isArray(item.users) ? item.users[0] : item.users
+      return {
+        date: item.date,
+        userId: item.user_id,
+        name: user?.name ?? item.name,
+        user: user
+          ? { id: user.id, name: user.name, color: user.color }
+          : undefined,
+        createdAt: item.created_at,
+      }
+    }) ?? []
 
   return NextResponse.json({ items: sortItems(items) })
 }
