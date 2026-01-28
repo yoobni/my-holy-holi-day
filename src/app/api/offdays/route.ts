@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server"
-import { readJson, writeJson } from "@/server/utils/fileStore"
+import { supabase } from "@/server/utils/supabase"
 
 export const runtime = "nodejs"
 
 type OffdayItem = {
   date: string
+  userId: number
   name: string
   createdAt: string
 }
@@ -13,53 +14,106 @@ type OffdaysPayload = {
   items: OffdayItem[]
 }
 
-const fallbackOffdays: OffdaysPayload = {
-  items: [],
-}
-
 function uniqueDates(dates: string[]): string[] {
   return Array.from(new Set(dates)).sort()
 }
 
 function sortItems(items: OffdayItem[]): OffdayItem[] {
-  return [...items].sort((a, b) => a.date.localeCompare(b.date))
+  return [...items].sort((a, b) => {
+    const byDate = a.date.localeCompare(b.date)
+    if (byDate !== 0) return byDate
+    return a.userId - b.userId
+  })
 }
 
 // 내부용: 보안 고려 없음
 export async function GET() {
-  const data = await readJson("offdays.json", fallbackOffdays)
-  return NextResponse.json({ items: sortItems(data.items) })
+  const { data, error } = await supabase
+    .from("offdays")
+    .select("date,user_id,name,created_at")
+    .order("date", { ascending: true })
+    .order("user_id", { ascending: true })
+
+  if (error) {
+    return NextResponse.json(
+      { message: "Failed to load offdays" },
+      { status: 500 }
+    )
+  }
+
+  const items =
+    data?.map((item) => ({
+      date: item.date,
+      userId: item.user_id,
+      name: item.name,
+      createdAt: item.created_at,
+    })) ?? []
+
+  return NextResponse.json({ items: sortItems(items) })
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { dates?: string[]; name?: string }
+  const body = (await request.json()) as {
+    dates?: string[]
+    name?: string
+    userId?: number
+  }
   const dates = Array.isArray(body.dates) ? uniqueDates(body.dates) : []
   const name = typeof body.name === "string" ? body.name : ""
+  const userId = typeof body.userId === "number" ? body.userId : null
 
-  if (!name || dates.length === 0) {
+  if (!name || dates.length === 0 || userId === null) {
     return NextResponse.json(
       { message: "Invalid payload" },
       { status: 400 }
     )
   }
 
-  const data = await readJson("offdays.json", fallbackOffdays)
-  const existingDates = new Set(data.items.map((item) => item.date))
+  const { data: existing, error: existingError } = await supabase
+    .from("offdays")
+    .select("date")
+    .eq("user_id", userId)
+    .in("date", dates)
+
+  if (existingError) {
+    return NextResponse.json(
+      { message: "Failed to read offdays" },
+      { status: 500 }
+    )
+  }
+
+  const existingSet = new Set(existing?.map((row) => row.date) ?? [])
   const added: string[] = []
   const skipped: string[] = []
 
-  for (const date of dates) {
-    if (existingDates.has(date)) {
-      skipped.push(date)
-      continue
-    }
-    data.items.push({ date, name, createdAt: new Date().toISOString() })
-    existingDates.add(date)
-    added.push(date)
-  }
+  const toInsert = dates
+    .filter((date) => {
+      if (existingSet.has(date)) {
+        skipped.push(date)
+        return false
+      }
+      added.push(date)
+      return true
+    })
+    .map((date) => ({
+      date,
+      user_id: userId,
+      name,
+      created_at: new Date().toISOString(),
+    }))
 
-  data.items = sortItems(data.items)
-  await writeJson("offdays.json", data)
+  if (toInsert.length > 0) {
+    const { error: insertError } = await supabase
+      .from("offdays")
+      .insert(toInsert)
+
+    if (insertError) {
+      return NextResponse.json(
+        { message: "Failed to save offdays" },
+        { status: 500 }
+      )
+    }
+  }
 
   return NextResponse.json({ added, skipped })
 }
@@ -75,13 +129,17 @@ export async function DELETE(request: Request) {
     )
   }
 
-  const data = await readJson("offdays.json", fallbackOffdays)
-  const dateSet = new Set(dates)
-  const before = data.items.length
-  data.items = sortItems(data.items.filter((item) => !dateSet.has(item.date)))
-  const deletedCount = before - data.items.length
+  const { error: deleteError } = await supabase
+    .from("offdays")
+    .delete()
+    .in("date", dates)
 
-  await writeJson("offdays.json", data)
+  if (deleteError) {
+    return NextResponse.json(
+      { message: "Failed to delete offdays" },
+      { status: 500 }
+    )
+  }
 
-  return NextResponse.json({ deleted: dates, deletedCount })
+  return NextResponse.json({ deleted: dates, deletedCount: dates.length })
 }
