@@ -119,10 +119,11 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const body = (await request.json()) as { dates?: string[] }
+  const body = (await request.json()) as { dates?: string[]; userId?: number }
   const dates = Array.isArray(body.dates) ? uniqueDates(body.dates) : []
+  const userId = typeof body.userId === "number" ? body.userId : null
 
-  if (dates.length === 0) {
+  if (dates.length === 0 || userId === null) {
     return NextResponse.json(
       { message: "Invalid payload" },
       { status: 400 }
@@ -133,6 +134,7 @@ export async function DELETE(request: Request) {
     .from("offdays")
     .delete()
     .in("date", dates)
+    .eq("user_id", userId)
 
   if (deleteError) {
     return NextResponse.json(

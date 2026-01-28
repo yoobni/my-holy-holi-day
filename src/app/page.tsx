@@ -361,6 +361,19 @@ export default function Home() {
     return data.allowedUsers
   }, [])
 
+  const verifyUser = React.useCallback(async (name: string, birth: string) => {
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, birth }),
+    })
+    if (!res.ok) {
+      throw new Error('Failed to verify user')
+    }
+    const data = (await res.json()) as { matched: AllowedUser | null }
+    return data.matched
+  }, [])
+
   const fetchOffdays = React.useCallback(async () => {
     const res = await fetch('/api/offdays', { cache: 'no-store' })
     if (!res.ok) {
@@ -379,15 +392,12 @@ export default function Home() {
 
     const init = async () => {
       try {
-        const users = await fetchUsers()
-        if (!mounted) return
         const stored = localStorage.getItem(STORAGE_KEY)
         if (stored) {
           const parsed = JSON.parse(stored) as StoredUser
-          const matched = users.find(
-            (user) =>
-              user.name === parsed.name &&
-              normalizeBirth(user.birth) === normalizeBirth(parsed.birth)
+          const matched = await verifyUser(
+            parsed.name,
+            normalizeBirth(parsed.birth)
           )
           if (matched) {
             setCurrentUser({
@@ -418,25 +428,25 @@ export default function Home() {
     return () => {
       mounted = false
     }
-  }, [fetchUsers, fetchOffdays])
+  }, [verifyUser])
 
   React.useEffect(() => {
     if (!canEdit) {
       setOffdays([])
+      setAllowedUsers([])
       return
     }
+    fetchUsers().catch(() => {
+      setAllowedUsers([])
+    })
     fetchOffdays().catch(() => {
       setOffdays([])
     })
-  }, [canEdit, fetchOffdays])
+  }, [canEdit, fetchOffdays, fetchUsers])
 
   const handleDialogSubmit = async () => {
     const normalizedInputBirth = normalizeBirth(birthInput)
-    const matched = allowedUsers.find(
-      (user) =>
-        user.name === nameInput &&
-        normalizeBirth(user.birth) === normalizedInputBirth
-    )
+    const matched = await verifyUser(nameInput, normalizedInputBirth)
 
     if (!matched) {
       setCanEdit(false)
@@ -507,13 +517,13 @@ export default function Home() {
   }
 
   const handleDeleteOffdays = async () => {
-    if (selectedYmd.length === 0) return
+    if (!currentUser || selectedYmd.length === 0) return
     setLoading(true)
     try {
       const res = await fetch('/api/offdays', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dates: selectedYmd }),
+        body: JSON.stringify({ dates: selectedYmd, userId: currentUser.id }),
       })
 
       if (!res.ok) {
