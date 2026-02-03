@@ -5,7 +5,6 @@ import {
   addDays,
   differenceInCalendarDays,
   eachDayOfInterval,
-  isSameDay,
   endOfMonth,
   endOfWeek,
   format,
@@ -562,6 +561,33 @@ export default function Home() {
     }
   }
 
+  const handleTimelineDateClick = React.useCallback(
+    (dateKey: string) => {
+      const names = offdays
+        .filter((item) => item.date === dateKey)
+        .map((item) => item.name)
+      if (names.length === 0) {
+        toast.info('휴무자가 없습니다')
+        return
+      }
+      const uniqueNames = Array.from(new Set(names))
+      const currentName = currentUser?.name
+      const others = currentName
+        ? uniqueNames.filter((name) => name !== currentName)
+        : uniqueNames
+      const shortNames = others.map((name) =>
+        name.length > 1 ? name.slice(1) : name
+      )
+      const title = shortNames.length > 0 ? shortNames.join(' / ') : '휴무'
+      const desc = `휴무자: ${uniqueNames.join(', ')}`
+
+      window.location.href = `/api/calendar/ics?date=${encodeURIComponent(
+        dateKey
+      )}&title=${encodeURIComponent(title)}&desc=${encodeURIComponent(desc)}`
+    },
+    [offdays, currentUser]
+  )
+
   const isReadOnly = !canEdit
 
   return (
@@ -615,6 +641,7 @@ export default function Home() {
           holidaySet={holidaySet}
           toYmd={toYmd}
           currentMonth={currentMonth}
+          onDateClick={handleTimelineDateClick}
         />
 
         <SharedDays

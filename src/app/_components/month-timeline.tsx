@@ -33,6 +33,7 @@ type Props = {
   holidaySet: Set<string>
   toYmd: (date: Date) => string
   currentMonth: Date
+  onDateClick: (dateKey: string) => void
 }
 
 export function MonthTimeline({
@@ -44,6 +45,7 @@ export function MonthTimeline({
   holidaySet,
   toYmd,
   currentMonth,
+  onDateClick,
 }: Props) {
   return (
     <Card className='p-4'>
@@ -68,7 +70,8 @@ export function MonthTimeline({
                     return (
                       <div
                         key={day.toISOString()}
-                        className='flex flex-col items-center rounded-md bg-zinc-50 py-1'
+                        className='flex cursor-pointer flex-col items-center rounded-md bg-zinc-50 py-1 transition hover:bg-zinc-100'
+                        onClick={() => onDateClick(toYmd(day))}
                       >
                         <span
                           className={isHoliday ? 'text-red-400 font-semibold' : ''}
